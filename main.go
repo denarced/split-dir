@@ -34,7 +34,10 @@ type AddCmd struct {
 	Files []string `arg:"" help:"Filenames used as split markers."`
 }
 
-type SplitCmd struct{}
+type SplitCmd struct {
+	Prefix string `short:"p" help:"Prefix for created directory names."`
+	DryRun bool   `short:"n" help:"Don't actually move files or write anything."`
+}
 
 const splitFile = ".split"
 
@@ -94,7 +97,7 @@ func (v *AddCmd) Run() error {
 	return nil
 }
 
-func (*SplitCmd) Run() error {
+func (v *SplitCmd) Run() error {
 	base, err := os.Getwd()
 	if err != nil {
 		return &errorWithCode{
@@ -128,22 +131,34 @@ func (*SplitCmd) Run() error {
 
 	partitions := partitionFiles(allFiles, markers)
 	for i, files := range partitions {
-		outDir := fmt.Sprintf("split_%d", i)
-		if err := os.MkdirAll(outDir, 0700); err != nil {
-			return &errorWithCode{
-				err:  fmt.Errorf("failed to create directory %s - %w", outDir, err),
-				code: errorExitMakeDir,
+		outDir := fmt.Sprintf("%s%02d", v.Prefix, i)
+		if v.DryRun {
+			fmt.Printf("Create directory %s\n", outDir)
+		} else {
+			if err := os.MkdirAll(outDir, 0700); err != nil {
+				return &errorWithCode{
+					err:  fmt.Errorf("failed to create directory %s - %w", outDir, err),
+					code: errorExitMakeDir,
+				}
 			}
 		}
 		for _, file := range files {
 			dst := filepath.Join(outDir, file)
-			if err := os.Rename(file, dst); err != nil {
-				return &errorWithCode{
-					err:  fmt.Errorf("failed move %s - %w", file, err),
-					code: errorExitMoveFile,
+			if v.DryRun {
+				fmt.Printf("%s -> %s\n", file, dst)
+			} else {
+				if err := os.Rename(file, dst); err != nil {
+					return &errorWithCode{
+						err:  fmt.Errorf("failed move %s - %w", file, err),
+						code: errorExitMoveFile,
+					}
 				}
 			}
 		}
+	}
+
+	if v.DryRun {
+		return nil
 	}
 	return os.Remove(splitFile)
 }
